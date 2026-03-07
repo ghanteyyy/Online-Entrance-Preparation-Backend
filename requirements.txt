@@ -1,8 +1,11 @@
 django
+pillow
 psycopg2
-psycopg2-binary
 django_redis
 python-dotenv
+drf-spectacular
+psycopg2-binary
+django_ratelimit
 django-cors-headers
 djangorestframework
 djangorestframework-simplejwt
