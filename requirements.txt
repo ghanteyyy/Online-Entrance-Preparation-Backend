@@ -1,5 +1,6 @@
 django
 psycopg2
+psycopg2-binary
 django_redis
 python-dotenv
 django-cors-headers
