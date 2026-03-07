@@ -1,5 +1,5 @@
-import cookies
-import models as user_models
+from .models import CustomUser
+from .cookies import REFRESH_COOKIE_NAME, set_refresh_cookie, clear_refresh_cookie
 
 from django.middleware.csrf import get_token
 from django.contrib.auth import authenticate
@@ -43,7 +43,7 @@ def Login(request):
         status=status.HTTP_200_OK
     )
 
-    cookies.set_refresh_cookie(res, str(tokens))
+    set_refresh_cookie(res, str(tokens))
 
     return res
 
@@ -67,7 +67,7 @@ def Register(request):
             }, status=status.HTTP_400_BAD_REQUEST
         )
 
-    if user_models.CustomUser.objects.filter(email__iexact=email).exists():
+    if CustomUser.objects.filter(email__iexact=email).exists():
         return Response(
             {
                 'status': False,
@@ -109,7 +109,7 @@ def Register(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Logout(request):
-    refresh = request.COOKIES.get(cookies.REFRESH_COOKIE_NAME)
+    refresh = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
     res = Response(
         {
@@ -126,7 +126,7 @@ def Logout(request):
         except Exception:
             pass
 
-    cookies.clear_refresh_cookie(res)
+    clear_refresh_cookie(res)
     get_token(request)  # Ensure CSRF cookie is set for future requests
 
     return res
@@ -135,7 +135,7 @@ def Logout(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def RefreshAccess(request):
-    refresh = request.COOKIES.get(cookies.REFRESH_COOKIE_NAME)
+    refresh = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
     if not refresh:
         return Response({"detail": "No refresh token"}, status=401)
@@ -157,7 +157,7 @@ def RefreshAccess(request):
     new_refresh = data.get("refresh")
 
     if new_refresh:
-        cookies.set_refresh_cookie(res, new_refresh)
+        set_refresh_cookie(res, new_refresh)
 
     return res
 
