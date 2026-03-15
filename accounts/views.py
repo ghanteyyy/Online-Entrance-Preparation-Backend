@@ -1,6 +1,8 @@
 from .models import CustomUser
 from .cookies import REFRESH_COOKIE_NAME, set_refresh_cookie, clear_refresh_cookie
 
+from drf_spectacular.utils import extend_schema, OpenApiExample
+
 from django.middleware.csrf import get_token
 from django.contrib.auth import authenticate
 from . serializers import RegisterSerializer
@@ -14,7 +16,31 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
 
 
-
+@extend_schema(
+    summary="Login user",
+    description="Authenticates a user and returns an access token while setting refresh token in an HTTP-only cookie.",
+    request={
+        "application/json": {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string", "example": "abc@example.com"},
+                "password": {"type": "string", "example": "StrongPass123"},
+            },
+            "required": ["email", "password"],
+        }
+    },
+    responses={200: {"type": "object", "properties": {
+        "status": {"type": "boolean"},
+        "access": {"type": "string"},
+    }}},
+    examples=[
+        OpenApiExample(
+            "Login Example",
+            value={"email": "abc@example.com", "password": "StrongPass123"},
+            request_only=True,
+        )
+    ],
+)
 @ratelimit(key='ip', rate='100/m', block=True)
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -48,6 +74,36 @@ def Login(request):
     return res
 
 
+register_response_schema = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "boolean"},
+        "message": {"type": "string"},
+    },
+}
+
+@extend_schema(
+    summary="Register user",
+    description="Creates a new user account and returns an access token while setting refresh token in an HTTP-only cookie.",
+    request=RegisterSerializer,
+    responses={
+        200: register_response_schema,
+        400: register_response_schema
+    },
+    examples=[
+        OpenApiExample(
+            "Register Example",
+            value={
+                "name": "John Doe",
+                "email": "john@example.com",
+                "password": "StrongPass123",
+                "gender": "male",
+                "date_of_birth": "1990-01-01"
+            },
+            request_only=True,
+        )
+    ],
+)
 @ratelimit(key='ip', rate='100/m', block=True)
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -106,6 +162,15 @@ def Register(request):
     )
 
 
+@extend_schema(
+    summary='Logout user',
+    description='Logs out the user by blacklisting the refresh token and clearing the refresh token cookie.',
+    request=None,
+    responses={200: {"type": "object", "properties": {
+        "status": {"type": "boolean"},
+        "message": {"type": "string"},
+    }}},
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Logout(request):
@@ -132,13 +197,32 @@ def Logout(request):
     return res
 
 
+@extend_schema(
+    summary='Refresh access token',
+    description='Refreshes the access token using the refresh token stored in an HTTP-only cookie. If token rotation is enabled, also sets a new refresh token in the cookie.',
+    request=None,
+    responses={
+        200: {"type": "object", "properties": {
+            "status": {"type": "boolean"},
+            "access": {"type": "string"},
+        }},
+        401: {"type": "object", "properties": {
+            "status": {"type": "boolean"},
+            "message": {"type": "string"},
+        }},
+    },
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def RefreshAccess(request):
     refresh = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
     if not refresh:
-        return Response({"detail": "No refresh token"}, status=401)
+        return Response(
+            {
+                "status": False,
+                "message": "No refresh token"
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
     serializer = TokenRefreshSerializer(data={"refresh": refresh})
 
@@ -146,12 +230,20 @@ def RefreshAccess(request):
         serializer.is_valid(raise_exception=True)
 
     except Exception:
-        return Response({"detail": "Refresh expired/invalid"}, status=401)
+        return Response(
+            {
+                "status": False,
+                "message": "Refresh expired/invalid"
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
     data = serializer.validated_data
     access = data["access"]
 
-    res = Response({"access": access}, status=200)
+    res = Response(
+        {
+            "status": True,
+            "access": access
+        }, status=status.HTTP_200_OK)
 
     # If rotation is on, SimpleJWT will include a new refresh in response data
     new_refresh = data.get("refresh")
@@ -160,4 +252,3 @@ def RefreshAccess(request):
         set_refresh_cookie(res, new_refresh)
 
     return res
-
