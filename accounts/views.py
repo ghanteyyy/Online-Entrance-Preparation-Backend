@@ -5,6 +5,7 @@ from drf_spectacular.utils import extend_schema, OpenApiExample
 
 from django.middleware.csrf import get_token
 from django.contrib.auth import authenticate
+from django.views.decorators.csrf import csrf_exempt
 from . serializers import RegisterSerializer
 
 from rest_framework import status
@@ -212,6 +213,9 @@ def Logout(request):
         }},
     },
 )
+
+
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def RefreshAccess(request):
