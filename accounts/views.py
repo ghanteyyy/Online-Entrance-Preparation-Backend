@@ -1,20 +1,20 @@
-from .models import CustomUser
-from .cookies import REFRESH_COOKIE_NAME, set_refresh_cookie, clear_refresh_cookie
-
-from drf_spectacular.utils import extend_schema, OpenApiExample
-
 from django.middleware.csrf import get_token
 from django.contrib.auth import authenticate
-from django.views.decorators.csrf import csrf_exempt
-from . serializers import RegisterSerializer
+from django.contrib.auth import get_user_model
+from django_ratelimit.decorators import ratelimit
 
 from rest_framework import status
 from rest_framework.response import Response
-from django_ratelimit.decorators import ratelimit
+from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.serializers import TokenRefreshSerializer
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.decorators import api_view, permission_classes
+
+from drf_spectacular.utils import extend_schema, OpenApiExample
+
+from .models import CustomUser
+from . serializers import RegisterSerializer
+from .cookies import REFRESH_COOKIE_NAME, set_refresh_cookie, clear_refresh_cookie
 
 
 @extend_schema(
@@ -55,7 +55,12 @@ def Login(request):
     user = authenticate(request, email=email, password=password)
 
     if not user:
-        return Response({"status": False, "message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(
+            {
+                "status": False,
+                "message": "Invalid credentials"
+            }, status=status.HTTP_401_UNAUTHORIZED
+        )
 
     tokens = RefreshToken.for_user(user)
 
@@ -173,9 +178,9 @@ def Register(request):
     }}},
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def Logout(request):
-    refresh = request.COOKIES.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
     res = Response(
         {
@@ -184,16 +189,15 @@ def Logout(request):
         }, status=status.HTTP_200_OK
     )
 
-    if refresh:
+    if refresh_token:
         try:
-            token = RefreshToken(refresh)
+            token = RefreshToken(refresh_token)
             token.blacklist()
 
-        except Exception:
+        except TokenError:
             pass
 
     clear_refresh_cookie(res)
-    get_token(request)  # Ensure CSRF cookie is set for future requests
 
     return res
 
@@ -213,46 +217,53 @@ def Logout(request):
         }},
     },
 )
-
-
-@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def RefreshAccess(request):
-    refresh = request.COOKIES.get(REFRESH_COOKIE_NAME)
+    refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
-    if not refresh:
+    if not refresh_token:
         return Response(
             {
                 "status": False,
                 "message": "No refresh token"
             }, status=status.HTTP_401_UNAUTHORIZED)
 
-    serializer = TokenRefreshSerializer(data={"refresh": refresh})
+    User = get_user_model()
 
     try:
-        serializer.is_valid(raise_exception=True)
+        old_refresh = RefreshToken(refresh_token)
 
-    except Exception:
-        return Response(
+        user_id = old_refresh["user_id"]
+        user = User.objects.get(id=user_id)
+
+        new_fresh = RefreshToken.for_user(user)
+        access = str(new_fresh.access_token)
+
+        res = Response(
+            {
+                "status": True,
+                "access": access
+            }, status=status.HTTP_200_OK)
+
+        set_refresh_cookie(res, str(new_fresh))
+
+        try:
+            old_refresh.blacklist()
+
+        except Exception:
+            pass
+
+        return res
+
+    except (TokenError, user.DoesNotExist):
+        res = Response(
             {
                 "status": False,
-                "message": "Refresh expired/invalid"
-            }, status=status.HTTP_401_UNAUTHORIZED)
+                "message": "Invalid or expired refresh token"
+            }, status=status.HTTP_401_UNAUTHORIZED
+        )
 
-    data = serializer.validated_data
-    access = data["access"]
+        clear_refresh_cookie(res)
 
-    res = Response(
-        {
-            "status": True,
-            "access": access
-        }, status=status.HTTP_200_OK)
-
-    # If rotation is on, SimpleJWT will include a new refresh in response data
-    new_refresh = data.get("refresh")
-
-    if new_refresh:
-        set_refresh_cookie(res, new_refresh)
-
-    return res
+        return res
