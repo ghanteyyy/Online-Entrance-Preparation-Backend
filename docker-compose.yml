@@ -7,7 +7,7 @@ services:
     container_name: online_entrance_preparation_db
     restart: always
     env_file:
-      - .env
+      - .env.dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +27,7 @@ services:
       db:
         condition: service_healthy
     env_file:
-      - .env
+      - .env.dev
 
 volumes:
   postgres_data:
