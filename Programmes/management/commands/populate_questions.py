@@ -26,7 +26,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         base_dir = Path(__file__).resolve().parent.parent.parent.parent
-        file_path = base_dir / 'Users' / 'Questions.json'
+        file_path = base_dir / 'static' / 'Questions.json'
 
         programme_maps = {
             'BCA': 'Bachelor of Computer Applications',
